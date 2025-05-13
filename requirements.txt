@@ -1,0 +1,3 @@
+echo "sounddevice" > requirements.txt
+echo "vosk" >> requirements.txt
+echo "numpy" >> requirements.txt
