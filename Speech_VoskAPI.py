@@ -8,10 +8,20 @@ import os
 import tempfile
 from vosk import Model, KaldiRecognizer
 from rapidfuzz import fuzz
-
+from gtts import gTTS
+from pydub import AudioSegment
+from pydub.playback import play
 # ========== Text-to-Speech using Coqui TTS ==========
-
-
+def speak(text):
+    if not text or text.strip() == "":  
+        return
+    
+    tts = gTTS(text=text, lang='en')
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
+        tts.save(fp.name)
+        sound = AudioSegment.from_mp3(fp.name)
+        play(sound)
+    os.unlink(fp.name)
 # ========== Send JSON to server ==========
 SERVER_URL = " " 
 def send_order_to_server(order_data):
@@ -32,13 +42,13 @@ keywords = {
         "sweet tea": ["sweet tea"]
     },
     "Size": {
-        "S": ["size s"],
-        "M": ["size m"],
-        "L": ["size l"]
+        "S": ["size s", "s"],
+        "M": ["size m", "m"],
+        "L": ["size l", "l"]
     },
     "YesNo": {
-        "Yes": ["yes", "yeah", "correct"],
-        "No": ["no", "nope", "not"]
+        "Yes": ["yes", "yeah", "correct", "sure", "right"],
+        "No": ["no", "nope", "not", "incorrect", "wrong"]
     }
 }     
 q = queue.Queue()
@@ -73,9 +83,8 @@ def detect_best_match(text, category, threshold=80):
     return None
 # ================================================ Run ==================================================
 print(f"Listening... (Sample Rate = {samplerate})")
-
+speak("Hello! What would you like to drink?")
 print("Hello! What would you like to drink?")
-
 step = 1
 selected_drink = None
 selected_size = None
@@ -99,13 +108,14 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=8000, dtype='int16',
                 if answer == "Yes":
                     if pending_category == "Drink":
                         selected_drink = pending_value
-          
+                        speak(f"You chose drink: {selected_drink}. What size do you want?")
                         print(f"You chose drink: {selected_drink}. What size do you want?")
                         step = 2
                     elif pending_category == "Size":
                         selected_size = pending_value
-                     
+                        speak(f"You chose size: {selected_size}. Order successful!")
                         print(f"You chose size: {selected_size}. Order successful!")
+                        speak(f"Confirm: {selected_drink} - size {selected_size}")
                         print(f"Confirm: {selected_drink} - size {selected_size}")
                         # =================== JSON ===================
                         order_data = {
@@ -119,21 +129,21 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=8000, dtype='int16',
                     pending_value = None
                     pending_category = None
                 elif answer == "No":
-    
+                    speak("Sorry.Please try again")
                     print("Sorry.Please try again")
                     if pending_category == "Drink":
-                  
+                        speak("What would you like to drink?")
                         print("What would you like to drink?")
                         step = 1
                     elif pending_category == "Size":
-               
+                        speak("What size do you want?")
                         print("What size do you want?")
                         step = 2
                     waiting_confirmation = False
                     pending_value = None
                     pending_category = None
                 else:
-               
+                    speak("Please say yes or no.")
                     print("Please say yes or no.")
                 continue
 
@@ -141,26 +151,26 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=8000, dtype='int16',
             if step == 1:
                 drink = detect_best_match(text, "Drink")
                 if drink:
-            
+                    speak(f"Did you mean drink {drink}? example yes or no")
                     print(f"Did you mean drink {drink}? (yes/no)")
                     pending_value = drink
                     pending_category = "Drink"
                     waiting_confirmation = True
                 else:
-            
+                    speak("Drink not recognized. Please try again.")
                     print("Drink not recognized. Please try again.")
 
             
             elif step == 2:
                 size = detect_best_match(text, "Size")
                 if size:
-          
+                    speak(f"Did you mean size {size}? example yes or no")
                     print(f"Did you mean size {size}? (yes/no)")
                     pending_value = size
                     pending_category = "Size"
                     waiting_confirmation = True
                 else:
-                 
+                    speak("Size not recognized. Please try again.")
                     print("Size not recognized. Please try again.")
 
 
