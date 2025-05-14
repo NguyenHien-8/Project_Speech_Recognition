@@ -71,7 +71,7 @@ keywords = {
         "coffee": ["coffee"],
         "milk coffee": ["milk coffee"],
         "milk tea": ["milk tea"],
-        "sweet tea": ["sweet tea"]
+        "sugar tea": ["sugar tea"]
     },
     "Size": {
         "S": ["size s", "s"],
@@ -125,7 +125,10 @@ customizing = False
 current_component_index = 0
 component_sizes = {}
 components = {
-    "milk tea": ["milk", "tea"]
+    "coffee": ["coffee", "sugar"],
+    "milk coffee": ["coffee", "milk"],
+    "milk tea": ["tea", "milk"],
+    "sugar tea": ["tea", "sugar"]
 }
 
 # === Trong vòng while True ===
@@ -146,8 +149,8 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                 if answer == "Yes":
                     if pending_category == "Drink":
                         selected_drink = pending_value
-                        speak(f"You chose drink: {selected_drink}. Do you want to customize its ingredients?")
-                        print(f"You chose drink: {selected_drink}. Do you want to customize its ingredients?")
+                        speak(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
+                        print(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
                         pending_category = "Customize"
                         waiting_confirmation = True
                     elif pending_category == "Customize":
@@ -222,7 +225,6 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                     print("Please say yes or no.")
                 continue
 
-            # === Logic bình thường ===
             if step == 1:
                 drink = detect_best_match(text, "Drink")
                 if drink:
@@ -232,8 +234,8 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                     pending_category = "Drink"
                     waiting_confirmation = True
                 else:
-                    speak("Drink not recognized. Please try again.")
-                    print("Drink not recognized. Please try again.")
+                    speak("Sorry I did not recognize the drink. Please try again.")
+                    print("Sorry I did not recognize the drink. Please try again.")
 
             elif step == 2:
                 size = detect_best_match(text, "Size")
@@ -244,8 +246,8 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                     pending_category = "Size"
                     waiting_confirmation = True
                 else:
-                    speak("Size not recognized. Please try again.")
-                    print("Size not recognized. Please try again.")
+                    speak("Sorry I did not recognize the size. Please try again.")
+                    print("Sorry I did not recognize the size. Please try again.")
 
             elif step == 3:  # Component customization
                 size = detect_best_match(text, "Size")
@@ -257,5 +259,5 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                     pending_category = "ComponentSize"
                     waiting_confirmation = True
                 else:
-                    speak("Size not recognized. Please try again.")
-                    print("Size not recognized. Please try again.")
+                    speak("Sorry I did not recognize the size. Please try again.")
+                    print("Sorry I did not recognize the size. Please try again.")
