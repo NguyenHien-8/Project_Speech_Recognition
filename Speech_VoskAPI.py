@@ -14,7 +14,7 @@ from pydub import AudioSegment
 from pydub.playback import play
 
 # ========== Configuration ==========
-MIN_VOLUME_THRESHOLD = 0.02  # Adjust based on your microphone sensitivity
+MIN_VOLUME_THRESHOLD = 0.001  # Adjust based on your microphone sensitivity
 MIN_SPEECH_DURATION = 0.5    # Minimum seconds of speech to consider
 SILENCE_TIMEOUT = 2.0        # Seconds of silence to stop listening
 
@@ -69,12 +69,16 @@ rec.SetWords(True)
 
 # Voice activity detection variables
 is_speaking = False
-speech_buffer = []
+speech_buffer = bytearray()
 last_voice_time = 0
 
 def calculate_volume_level(indata):
     """Calculate RMS volume of audio data"""
-    rms = np.sqrt(np.mean(np.square(indata)))
+    # Convert buffer to numpy array first
+    audio_data = np.frombuffer(indata, dtype=np.int16)
+    if len(audio_data) == 0:
+        return 0
+    rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
     return rms
 
 def callback(indata, frames, time, status):
@@ -92,16 +96,16 @@ def callback(indata, frames, time, status):
             print("\nVoice detected...")  # Debug output
             is_speaking = True
         last_voice_time = current_time
-        speech_buffer.append(indata.copy())
+        # Append the raw bytes to our buffer
+        speech_buffer.extend(indata)
     else:
         # Check if we should end the current speech segment
         if is_speaking and (current_time - last_voice_time) > SILENCE_TIMEOUT:
             is_speaking = False
-            if speech_buffer:
-                # Combine all buffered speech and put in queue
-                combined_audio = np.concatenate(speech_buffer)
-                q.put(bytes(combined_audio))
-                speech_buffer = []
+            if len(speech_buffer) > 0:
+                # Put the accumulated audio in queue
+                q.put(bytes(speech_buffer))
+                speech_buffer = bytearray()  # Reset buffer
 
 def normalize_text(text):
     """Text normalization"""
