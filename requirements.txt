@@ -1,3 +1,7 @@
-echo "sounddevice" > requirements.txt
-echo "vosk" >> requirements.txt
-echo "numpy" >> requirements.txt
+sounddevice
+vosk
+numpy
+requests
+rapidfuzz
+gTTS
+pydub

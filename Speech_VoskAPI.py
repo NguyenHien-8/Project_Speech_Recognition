@@ -12,8 +12,19 @@ from gtts import gTTS
 from pydub import AudioSegment
 from pydub.playback import play
 import time
+import subprocess
+
+
 is_speaking = False
 
+
+# Chỉ định thư mục lưu tệp mp3
+output_dir = "C:\\Users\\myngo\\Downloads\\temptsound"
+
+# Kiểm tra xem thư mục có tồn tại chưa, nếu không thì tạo mới
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+    
 # ========================== Text-to-Speech ===========================
 def speak(text):
     global is_speaking
@@ -22,11 +33,26 @@ def speak(text):
     is_speaking = True
     print(f"[TTS]: {text}")
     tts = gTTS(text=text, lang='en')
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
-        tts.save(fp.name)
-        sound = AudioSegment.from_mp3(fp.name)
-        play(sound)
-    os.unlink(fp.name)
+    mp3_file = os.path.join(output_dir, "temp_sound.mp3")
+    tts.save(mp3_file)
+    sound = AudioSegment.from_mp3(mp3_file)
+    # play(sound)
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav', dir=output_dir) as wav_file:
+        sound.export(wav_file.name, format="wav")
+        # os.system(f"ffplay -nodisp -autoexit \"{wav_file.name}\"")
+        # os.unlink(wav_file.name)
+    try:
+        subprocess.run(["ffplay", "-nodisp", "-autoexit", wav_file.name], check=True)
+    finally:
+        time.sleep(0.5)  # Give OS time to release file handle
+        if os.path.exists(wav_file.name):
+            try:
+                os.unlink(wav_file.name)
+            except PermissionError:
+                print(f"Could not delete {wav_file.name} because it is still in use.")
+
+
+    os.remove(mp3_file)
     time.sleep(0.3) 
     is_speaking = False
 
