@@ -1,7 +1,7 @@
 from Installsubabase import supabase
 response = (
     supabase.table("drinkdata")
-    .select("drink_name")
+    .select("ingredients")
     .execute()
 )
 print(response)
