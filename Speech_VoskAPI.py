@@ -1,21 +1,26 @@
 # ============================================ Nguyen Hien ============================================ 
-def run_VoskAPI():
-    import sounddevice as sd
-    import queue
-    import json
-    import requests
-    import re
-    import os
-    import tempfile
-    from vosk import Model, KaldiRecognizer
-    from rapidfuzz import fuzz
-    from gtts import gTTS
-    from pydub import AudioSegment
-    from pydub.playback import play
-    import time
-    from Installsubabase import supabase
-# ====================== Supabase Import keywords["Drink"] ======================
-    def fetch_drinks_from_supabase():
+# Developer: Trần Nguyên Hiền
+# Faculty: Electronics and Communication Engineering
+# =====================================================================================================
+import sounddevice as sd
+import queue
+import json
+import requests
+import re
+import os
+import tempfile
+from vosk import Model, KaldiRecognizer
+from rapidfuzz import fuzz
+from gtts import gTTS
+from pydub import AudioSegment
+from pydub.playback import play
+import time
+is_speaking = False
+
+# ============ From Supabase Import Drink and Ingredient ============
+from Installsubabase import supabase
+
+def fetch_drinks_from_supabase():
     try:
         response = supabase.table("drinkdata").select("drink_name").execute()
         drink_list = [item['drink_name'].lower() for item in response.data if 'drink_name' in item]
@@ -24,14 +29,27 @@ def run_VoskAPI():
         print("Error fetching drinks from Supabase:", str(e))
         return []
 
+def fetch_components_from_supabase():
+    try:
+        response = supabase.table("drinkdata").select("drink_name,ingredients").execute()
+        comp_dict = {}
+        for item in response.data:
+            name = item.get("drink_name", "").lower()
+            ing = item.get("ingredients", [])
+            if name and isinstance(ing, list):
+                comp_dict[name] = [i.lower() for i in ing]
+        return comp_dict
+    except Exception as e:
+        print("Error fetching ingredients from Supabase:", str(e))
+        return {}
+
 def update_drink_keywords(drink_list):
     keywords["Drink"] = {}
     for drink in drink_list:
         clean_drink = normalize_text(drink)
         keywords["Drink"][clean_drink] = [clean_drink]
-is_speaking = False
 
-# ========================== Text-to-Speech ===========================
+# ========================== Text-To-Speech ===========================
 def speak(text):
     global is_speaking
     if not text or text.strip() == "":
@@ -80,9 +98,9 @@ def normalize_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# ============================= Keywords Size =============================
+# ============================= Keywords =============================
 keywords = {
-    "Drink": {},  # Update from Supabase
+    "Drink": {},  
     "Size": {
         "S": ["size s", "s"],
         "M": ["size m", "m"],
@@ -119,11 +137,33 @@ def is_valid_speech(text):
                 if kw in text:
                     return True
     return False
+def reset_state():
+    global selected_drink, selected_size, component_sizes
+    global customizing, current_component_index
+    global step, waiting_confirmation, pending_value, pending_category
+
+    selected_drink = None
+    selected_size = None
+    component_sizes.clear()
+    customizing = False
+    current_component_index = 0
+    step = 1
+    waiting_confirmation = False
+    pending_value = None
+    pending_category = None
 
 # ================================================ MAIN ===================================================
+def run_voice_order_system():
+    global step, selected_drink, selected_size
+    global waiting_confirmation, pending_value, pending_category
+    global customizing, current_component_index, component_sizes
+
 drink_names = fetch_drinks_from_supabase()
 update_drink_keywords(drink_names)
 print("Updated drink keywords:", keywords["Drink"])
+
+components = fetch_components_from_supabase()
+print("Updated components from Supabase:", components)
 
 print(f"Listening... (Sample Rate = {samplerate})")
 speak("Hello! What would you like to drink?")
@@ -138,12 +178,6 @@ pending_category = None
 customizing = False
 current_component_index = 0
 component_sizes = {}
-components = {
-    "coffee": ["coffee", "sugar"],
-    "milk coffee": ["coffee", "milk"],
-    "milk tea": ["tea", "milk"],
-    "sugar tea": ["tea", "sugar"]
-}
 
 with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', channels=1, callback=callback):
     while True:
@@ -189,7 +223,7 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                             "selected_size": selected_size
                         }
                         send_order_to_server(order_data)
-                        break
+                        reset_state()
                     elif pending_category == "ComponentSize":
                         comp = components[selected_drink][current_component_index]
                         component_sizes[comp] = pending_value
@@ -209,7 +243,7 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                                 "customized_sizes": component_sizes
                             }
                             send_order_to_server(order_data)
-                            break
+                            reset_state()
                         waiting_confirmation = False
                 elif answer == "No":
                     if pending_category == "Drink":
@@ -261,7 +295,7 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                     speak("Sorry I did not recognize the size. Please try again.")
                     print("Sorry I did not recognize the size. Please try again.")
 
-            elif step == 3:  # Component customization
+            elif step == 3: 
                 size = detect_best_match(text, "Size")
                 if size:
                     comp = components[selected_drink][current_component_index]
@@ -273,3 +307,4 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                 else:
                     speak("Sorry I did not recognize the size. Please try again.")
                     print("Sorry I did not recognize the size. Please try again.")
+
