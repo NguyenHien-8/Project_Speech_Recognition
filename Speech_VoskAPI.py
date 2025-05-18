@@ -1,21 +1,22 @@
 # ============================================ Nguyen Hien ============================================ 
-def run_VoskAPI():
-    import sounddevice as sd
-    import queue
-    import json
-    import requests
-    import re
-    import os
-    import tempfile
-    from vosk import Model, KaldiRecognizer
-    from rapidfuzz import fuzz
-    from gtts import gTTS
-    from pydub import AudioSegment
-    from pydub.playback import play
-    import time
-    from Installsubabase import supabase
-# ====================== Supabase Import keywords["Drink"] ======================
-    def fetch_drinks_from_supabase():
+import sounddevice as sd
+import queue
+import json
+import requests
+import re
+import os
+import tempfile
+from vosk import Model, KaldiRecognizer
+from rapidfuzz import fuzz
+from gtts import gTTS
+from pydub import AudioSegment
+from pydub.playback import play
+import time
+
+# ====================== THÊM: Supabase Import + cập nhật keywords["Drink"] ======================
+from Installsubabase import supabase
+
+def fetch_drinks_from_supabase():
     try:
         response = supabase.table("drinkdata").select("drink_name").execute()
         drink_list = [item['drink_name'].lower() for item in response.data if 'drink_name' in item]
@@ -29,6 +30,9 @@ def update_drink_keywords(drink_list):
     for drink in drink_list:
         clean_drink = normalize_text(drink)
         keywords["Drink"][clean_drink] = [clean_drink]
+
+# ================================================================================================
+
 is_speaking = False
 
 # ========================== Text-to-Speech ===========================
@@ -80,9 +84,9 @@ def normalize_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# ============================= Keywords Size =============================
+# ============================= Keywords =============================
 keywords = {
-    "Drink": {},  # Update from Supabase
+    "Drink": {},  # sẽ được cập nhật từ Supabase
     "Size": {
         "S": ["size s", "s"],
         "M": ["size m", "m"],
@@ -121,6 +125,8 @@ def is_valid_speech(text):
     return False
 
 # ================================================ MAIN ===================================================
+
+# ========== THÊM: Tải danh sách đồ uống từ Supabase và cập nhật vào keywords ==========
 drink_names = fetch_drinks_from_supabase()
 update_drink_keywords(drink_names)
 print("Updated drink keywords:", keywords["Drink"])
@@ -135,6 +141,7 @@ waiting_confirmation = False
 pending_value = None
 pending_category = None
 
+# === Thêm biến trạng thái ===
 customizing = False
 current_component_index = 0
 component_sizes = {}
@@ -273,3 +280,4 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                 else:
                     speak("Sorry I did not recognize the size. Please try again.")
                     print("Sorry I did not recognize the size. Please try again.")
+
