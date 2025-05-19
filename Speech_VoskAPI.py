@@ -128,8 +128,6 @@ def detect_best_match(text, category, threshold=80):
 def is_valid_speech(text):
     if not text:
         return False
-    if "continue" in text:
-        return True
     for category in keywords.values():
         for kw_list in category.values():
             for kw in kw_list:
@@ -165,10 +163,11 @@ def Voice_Ordering_System():
     global step, selected_drink, selected_size
     global waiting_confirmation, pending_value, pending_category
     global customizing, current_component_index, component_sizes
-    global listening_for_trigger, latest_order
+    global latest_order
 
-    trigger_keywords = ["continue", "go on", "carry on", "can you", "ok", "start", "autobarista"]
     print(f"Listening... (Sample Rate = {samplerate})")
+    speak("Hello! What would you like to drink?")
+    print("Hello! What would you like to drink?")
 
     step = 1
     selected_drink = None
@@ -192,16 +191,6 @@ def Voice_Ordering_System():
 
                 if is_speaking or not text or not is_valid_speech(text):
                     print("Ignored noise or system playback.")
-                    continue
-
-                if listening_for_trigger:
-                    if text.startswith("autobarista") or any(kw in text for kw in trigger_keywords):
-                        speak("Yes, I'm here. What would you like to drink?")
-                        print("Yes, I'm here. What would you like to drink?")
-                        listening_for_trigger = False
-                        step = 1
-                    else:
-                        print("Waiting for trigger word...")
                     continue
 
                 if waiting_confirmation:
@@ -236,9 +225,6 @@ def Voice_Ordering_System():
                                 "Size": selected_size,
                             }
                             reset_state()
-                            listening_for_trigger = True
-                            speak("If you want to order again, just say Autobarista.")
-                            print("If you want to order again, just say Autobarista.")
                         elif pending_category == "ComponentSize":
                             comp = components[selected_drink][current_component_index]
                             component_sizes[comp] = pending_value
@@ -257,9 +243,6 @@ def Voice_Ordering_System():
                                     "Ingredient": component_sizes.copy()
                                 }
                                 reset_state()
-                                listening_for_trigger = True
-                                speak("If you want to order again, just say Autobarista.")
-                                print("If you want to order again, just say Autobarista.")
                             waiting_confirmation = False
                     elif answer == "No":
                         if pending_category == "Drink":
