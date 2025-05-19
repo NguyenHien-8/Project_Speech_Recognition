@@ -32,11 +32,18 @@ app.add_middleware(
 )
 is_speaking = False
 latest_order = None
+drink_prices = {}
 # ============ From Supabase Import Drink and Ingredient ============
 def fetch_drinks_from_supabase():
     try:
-        response = supabase.table("drinkdata").select("drink_name").execute()
-        return [item['drink_name'].lower() for item in response.data if 'drink_name' in item]
+        response = supabase.table("drinkdata").select("drink_name,price").execute()
+        drink_list = []
+        for item in response.data:
+            name = item.get('drink_name', '').lower()
+            price = item.get('price', 0)
+            if name:
+                drink_list.append({"name": name, "price": price})
+        return drink_list
     except Exception as e:
         print("Error fetching drinks from Supabase:", str(e))
         return []
@@ -55,11 +62,14 @@ def fetch_components_from_supabase():
         print("Error fetching ingredients from Supabase:", str(e))
         return {}
 
-def update_drink_keywords(drink_list):
+def update_drink_keywords(drink_data):
     keywords["Drink"] = {}
-    for drink in drink_list:
-        clean_drink = normalize_text(drink)
-        keywords["Drink"][clean_drink] = [clean_drink]
+    for item in drink_data:
+        name = item["name"]
+        price = item["price"]
+        clean_name = normalize_text(name)
+        keywords["Drink"][clean_name] = [clean_name]
+        drink_prices[clean_name] = price
 
 # ========================== Text-To-Speech ===========================
 def speak(text):
@@ -151,8 +161,8 @@ def reset_state():
     pending_category = None
 
 # ============ Initialize Keywords And Data ============
-drink_names = fetch_drinks_from_supabase()
-update_drink_keywords(drink_names)
+drink_data = fetch_drinks_from_supabase()
+update_drink_keywords(drink_data)
 components = fetch_components_from_supabase()
 
 print("Updated drink keywords:", keywords["Drink"])
@@ -178,7 +188,6 @@ def Voice_Ordering_System():
     customizing = False
     current_component_index = 0
     component_sizes = {}
-    listening_for_trigger = True
     latest_order = None
 
     with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', channels=1, callback=callback):
@@ -218,11 +227,13 @@ def Voice_Ordering_System():
                             waiting_confirmation = False
                         elif pending_category == "Size":
                             selected_size = pending_value
-                            speak(f"You chose size: {selected_size}. Order successful!")
+                            price = drink_prices.get(selected_drink, "unknown")
+                            speak(f"You chose size: {selected_size}. The price is {price} vnd. Order successful!")
                             speak(f"Confirm: {selected_drink} - size {selected_size}")
                             latest_order = {
-                                "Drink": selected_drink,
-                                "Size": selected_size,
+                                "price": price,
+                                "drink": selected_drink,
+                                "size": selected_size
                             }
                             reset_state()
                         elif pending_category == "ComponentSize":
@@ -234,13 +245,17 @@ def Voice_Ordering_System():
                                 speak(f"What size for {next_comp}?")
                                 print(f"What size for {next_comp}?")
                             else:
+                                price = drink_prices.get(selected_drink, "unknown")
                                 final_text = f"Confirm: {selected_drink} with " + \
                                              ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
                                 speak(final_text)
-                                speak("Order successful!")
+                                speak(f"The price is {price} vnd. Order successful!")
                                 latest_order = {
-                                    "Drink": selected_drink,
-                                    "Ingredient": component_sizes.copy()
+                                    "drink": selected_drink,
+                                    "details": {
+                                        "price": price,
+                                        **component_sizes.copy(),
+                                    }
                                 }
                                 reset_state()
                             waiting_confirmation = False
@@ -321,7 +336,7 @@ def root():
 @app.get("/latest_order")
 def get_latest_order():
     if latest_order:
-        return {"Status": "Send Success", "Order": latest_order}
+        return latest_order
     else:
         return {"Status": "No_Order", "Message": "No order has been placed yet."}
 
