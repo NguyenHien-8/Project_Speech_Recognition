@@ -31,6 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 is_speaking = False
+latest_order = None
 # ============ From Supabase Import Drink and Ingredient ============
 def fetch_drinks_from_supabase():
     try:
@@ -164,7 +165,7 @@ def Voice_Ordering_System():
     global step, selected_drink, selected_size
     global waiting_confirmation, pending_value, pending_category
     global customizing, current_component_index, component_sizes
-    global listening_for_trigger
+    global listening_for_trigger, latest_order
 
     trigger_keywords = ["continue", "go on", "carry on", "can you", "ok", "start", "autobarista"]
     print(f"Listening... (Sample Rate = {samplerate})")
@@ -179,6 +180,7 @@ def Voice_Ordering_System():
     current_component_index = 0
     component_sizes = {}
     listening_for_trigger = True
+    latest_order = None
 
     with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', channels=1, callback=callback):
         while True:
@@ -229,6 +231,10 @@ def Voice_Ordering_System():
                             selected_size = pending_value
                             speak(f"You chose size: {selected_size}. Order successful!")
                             speak(f"Confirm: {selected_drink} - size {selected_size}")
+                            latest_order = {
+                                "Drink": selected_drink,
+                                "Size": selected_size,
+                            }
                             reset_state()
                             listening_for_trigger = True
                             speak("If you want to order again, just say Autobarista.")
@@ -246,6 +252,10 @@ def Voice_Ordering_System():
                                              ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
                                 speak(final_text)
                                 speak("Order successful!")
+                                latest_order = {
+                                    "Drink": selected_drink,
+                                    "Ingredient": component_sizes.copy()
+                                }
                                 reset_state()
                                 listening_for_trigger = True
                                 speak("If you want to order again, just say Autobarista.")
@@ -323,9 +333,15 @@ def start_background_thread():
 
 @app.get("/")
 def root():
-    return {"message": "Voice ordering system is running."}
+    return {"Message": "Voice Chạy Được Rồi Nè"}
 
-# ====================== Entry Point ======================
+@app.get("/latest_order")
+def get_latest_order():
+    if latest_order:
+        return {"Status": "Send Success", "Order": latest_order}
+    else:
+        return {"Status": "No_Order", "Message": "No order has been placed yet."}
+
 if __name__ == "__main__":
-    uvicorn.run("Speech_VoskAPI:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("DemoCode3:app", host="0.0.0.0", port=8000, reload=False)
 
