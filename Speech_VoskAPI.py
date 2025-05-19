@@ -327,5 +327,5 @@ def root():
 
 # ====================== Entry Point ======================
 if __name__ == "__main__":
-    uvicorn.run("DemoCode3:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("Speech_VoskAPI:app", host="0.0.0.0", port=8000, reload=False)
 
