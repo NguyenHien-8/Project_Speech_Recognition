@@ -2,6 +2,11 @@
 # Developer: Trần Nguyên Hiền
 # Faculty: Electronics and Communication Engineering
 # =====================================================================================================
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import threading
+import uvicorn
+
 import sounddevice as sd
 import queue
 import json
@@ -15,11 +20,18 @@ from gtts import gTTS
 from pydub import AudioSegment
 from pydub.playback import play
 import time
-
-is_speaking = False
-
-# ============ From Supabase Import Drink and Ingredient ============
 from Installsubabase import supabase
+
+app = FastAPI(title="Voice Ordering System")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+is_speaking = False
+# ============ From Supabase Import Drink and Ingredient ============
 
 def fetch_drinks_from_supabase():
     try:
@@ -66,23 +78,12 @@ def speak(text):
     time.sleep(0.3) 
     is_speaking = False
 
-# ========================== Send Order JSON ==========================
-SERVER_URL = "http://your-server-url-here"
-def send_order_to_server(order_data):
-    try:
-        headers = {'Content-Type': 'application/json'}
-        response = requests.post(SERVER_URL, json=order_data, headers=headers)
-        print("Server response:", response.status_code, response.text)
-    except Exception as e:
-        print("Failed to send order to server:", str(e))
 
 # ========================= Voice Recognition =========================
-model_en = Model("vosk-model-small-en-us-0.15")
 q = queue.Queue()
-
+model_en = Model("vosk-model-small-en-us-0.15")
 device_info = sd.query_devices(sd.default.device[0], 'input')
 samplerate = int(device_info['default_samplerate'])
-
 rec = KaldiRecognizer(model_en, samplerate)
 rec.SetWords(True)
 
@@ -99,7 +100,7 @@ def normalize_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# ============================= Keywords ==============================
+# ============================= Keywords =============================
 keywords = {
     "Drink": {},  
     "Size": {
@@ -138,7 +139,6 @@ def is_valid_speech(text):
                 if kw in text:
                     return True
     return False
-
 def reset_state():
     global selected_drink, selected_size, component_sizes
     global customizing, current_component_index
@@ -154,16 +154,22 @@ def reset_state():
     pending_value = None
     pending_category = None
 
+# ================================================ MAIN ===================================================
 def contains_trigger_word(text):
     return "continue" in text.lower()
 
-# ================================================ MAIN ===================================================
 drink_names = fetch_drinks_from_supabase()
 update_drink_keywords(drink_names)
 print("Updated drink keywords:", keywords["Drink"])
 
 components = fetch_components_from_supabase()
 print("Updated components from Supabase:", components)
+
+def run_voice_order_system():
+    global step, selected_drink, selected_size
+    global waiting_confirmation, pending_value, pending_category
+    global customizing, current_component_index, component_sizes
+    global listening_for_trigger
 
 print(f"Listening... (Sample Rate = {samplerate})")
 
@@ -173,12 +179,10 @@ selected_size = None
 waiting_confirmation = False
 pending_value = None
 pending_category = None
-
 customizing = False
 current_component_index = 0
 component_sizes = {}
-
-listening_for_trigger = True  # Start in trigger mode
+listening_for_trigger = True
 
 with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', channels=1, callback=callback):
     while True:
@@ -188,11 +192,10 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
             text = normalize_text(result.get("text", ""))
             print(f"Detected: {text}")
 
-            if is_speaking or not text:
+            if is_speaking or not text or not is_valid_speech(text):
                 print("Ignored noise or system playback.")
                 continue
 
-            # Step 0: Waiting for trigger word
             if listening_for_trigger:
                 if contains_trigger_word(text):
                     speak("Yes, I'm here. What would you like to drink?")
@@ -209,6 +212,7 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                     if pending_category == "Drink":
                         selected_drink = pending_value
                         speak(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
+                        print(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
                         pending_category = "Customize"
                         waiting_confirmation = True
                     elif pending_category == "Customize":
@@ -217,20 +221,19 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                             current_component_index = 0
                             component_sizes.clear()
                             speak(f"What size for {components[selected_drink][current_component_index]}?")
+                            print(f"What size for {components[selected_drink][current_component_index]}?")
                             step = 3
                         else:
                             speak("This drink cannot be customized. Please choose size.")
+                            print("This drink cannot be customized. Please choose size.")
                             step = 2
                         waiting_confirmation = False
                     elif pending_category == "Size":
                         selected_size = pending_value
                         speak(f"You chose size: {selected_size}. Order successful!")
                         speak(f"Confirm: {selected_drink} - size {selected_size}")
-                        order_data = {
-                            "selected_drink": selected_drink,
-                            "selected_size": selected_size
-                        }
-                        send_order_to_server(order_data)
+                        print(f"Confirm: {selected_drink} - size {selected_size}")
+     
                         reset_state()
                         listening_for_trigger = True
                         speak("If you want to order again, just say Autobarista.")
@@ -241,15 +244,14 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                         if current_component_index < len(components[selected_drink]):
                             next_comp = components[selected_drink][current_component_index]
                             speak(f"What size for {next_comp}?")
+                            print(f"What size for {next_comp}?")
                         else:
-                            final_text = f"Confirm: {selected_drink} with " + ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
+                            final_text = f"Confirm: {selected_drink} with " + \
+                                         ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
                             speak(final_text)
                             speak("Order successful!")
-                            order_data = {
-                                "selected_drink": selected_drink,
-                                "customized_sizes": component_sizes
-                            }
-                            send_order_to_server(order_data)
+                            print(final_text)
+
                             reset_state()
                             listening_for_trigger = True
                             speak("If you want to order again, just say Autobarista.")
@@ -257,49 +259,78 @@ with sd.RawInputStream(samplerate=samplerate, blocksize=4000, dtype='int16', cha
                 elif answer == "No":
                     if pending_category == "Drink":
                         speak("Please say again. What would you like to drink?")
+                        print("Please say again. What would you like to drink?")
                         step = 1
                     elif pending_category == "Customize":
                         customizing = False
                         speak("What size do you want?")
+                        print("What size do you want?")
                         step = 2
+                        waiting_confirmation = False
                     elif pending_category == "Size":
                         speak("Please say size again.")
+                        print("Please say size again.")
                         step = 2
+                        waiting_confirmation = False
                     elif pending_category == "ComponentSize":
                         comp = components[selected_drink][current_component_index]
                         speak(f"Please say size again for {comp}.")
-                    waiting_confirmation = False
+                        print(f"Please say size again for {comp}.")
+                        waiting_confirmation = False
                 else:
                     speak("Please say yes or no.")
+                    print("Please say yes or no.")
                 continue
 
             if step == 1:
                 drink = detect_best_match(text, "Drink")
                 if drink:
                     speak(f"Did you mean drink {drink}? Please say yes or no.")
+                    print(f"Did you mean drink {drink}? Please say yes or no.")
                     pending_value = drink
                     pending_category = "Drink"
                     waiting_confirmation = True
                 else:
                     speak("Sorry I did not recognize the drink. Please try again.")
+                    print("Sorry I did not recognize the drink. Please try again.")
 
             elif step == 2:
                 size = detect_best_match(text, "Size")
                 if size:
                     speak(f"Did you mean size {size}? Please say yes or no.")
+                    print(f"Did you mean size {size}? Please say yes or no.")
                     pending_value = size
                     pending_category = "Size"
                     waiting_confirmation = True
                 else:
                     speak("Sorry I did not recognize the size. Please try again.")
+                    print("Sorry I did not recognize the size. Please try again.")
 
-            elif step == 3:
+            elif step == 3: 
                 size = detect_best_match(text, "Size")
                 if size:
                     comp = components[selected_drink][current_component_index]
                     speak(f"Did you mean size {size} for {comp}? Please say yes or no.")
+                    print(f"Did you mean size {size} for {comp}? Please say yes or no.")
                     pending_value = size
                     pending_category = "ComponentSize"
                     waiting_confirmation = True
                 else:
                     speak("Sorry I did not recognize the size. Please try again.")
+                    print("Sorry I did not recognize the size. Please try again.")
+
+# ==================== FastAPI Routes ====================
+@app.on_event("startup")
+def start_background_thread():
+    thread = threading.Thread(target=run_voice_order_system, daemon=True)
+    thread.start()
+    print("Voice system started in background.")
+
+@app.get("/")
+def root():
+    return {"message": "Voice ordering system is running."}
+
+# ==================== Entry Point ====================
+
+if __name__ == "__main__":
+    uvicorn.run("DemoThu:app", host="0.0.0.0", port=8000, reload=False)
