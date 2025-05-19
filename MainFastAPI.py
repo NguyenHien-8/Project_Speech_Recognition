@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import threading
 import uvicorn
-from Speech_VoskAPI import run_voice_order_system 
+from Http_Speech_VoskAPI import Voice_Ordering_System
 
 app = FastAPI(title="Voice Ordering System")
 
@@ -16,7 +16,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def start_background_voice():
-    thread = threading.Thread(target=run_voice_order_system, daemon=True)
+    thread = threading.Thread(target=Voice_Ordering_System, daemon=True)
     thread.start()
     print("Voice ordering system started in background.")
 
