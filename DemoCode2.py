@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import threading
 import uvicorn
 import sounddevice as sd
@@ -316,7 +317,15 @@ async def websocket_endpoint(websocket: WebSocket):
     except:
         clients.remove(websocket)
         print("WebSocket client disconnected.")
+        app = FastAPI()
 
+# Dữ liệu đơn hàng cuối cùng
+latest_order = {}
+@app.get("/latest_order")
+def get_latest_order():
+    if latest_order:
+        return JSONResponse(content=latest_order)
+    return JSONResponse(content={"message": "No orders yet."}, status_code=404)
 # === Startup Thread ===
 @app.on_event("startup")
 def start_voice_thread():

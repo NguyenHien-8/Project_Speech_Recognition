@@ -3,65 +3,76 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>WebSocket Drink Order Client</title>
+    <title>WebSocket Voice Order Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 2rem;
+            background-color: #f0f0f0;
+        }
+
+        #log {
+            margin-top: 1rem;
+            background: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 0.5rem;
+        }
+    </style>
 </head>
 
 <body>
-    <h1>WebSocket Voice Ordering System</h1>
+    <h1>Voice Order WebSocket Client</h1>
+    <p>Status: <span id="status">🔌 Connecting...</span></p>
 
-    <button id="connectBtn">Connect WebSocket</button>
-    <button id="triggerBtn" disabled>Trigger Voice (Autobarista)</button>
-    <button id="orderBtn" disabled>Get Latest Order</button>
-
-    <pre id="output"></pre>
+    <div id="log"></div>
 
     <script>
-        let socket;
+        const statusElem = document.getElementById("status");
+        const logElem = document.getElementById("log");
 
-        const connectBtn = document.getElementById('connectBtn');
-        const triggerBtn = document.getElementById('triggerBtn');
-        const orderBtn = document.getElementById('orderBtn');
-        const output = document.getElementById('output');
+        function log(message) {
+            const div = document.createElement("div");
+            div.className = "log-entry";
+            div.textContent = message;
+            logElem.appendChild(div);
+        }
 
-        connectBtn.onclick = () => {
-            socket = new WebSocket("ws://localhost:8000/ws");
+        const socket = new WebSocket("ws://localhost:8000/ws");
 
-            socket.onopen = () => {
-                output.innerText += "✅ WebSocket connected\n";
-                triggerBtn.disabled = false;
-                orderBtn.disabled = false;
-            };
-
-            socket.onmessage = (event) => {
-                output.innerText += `📨 Server: ${event.data}\n`;
-            };
-
-            socket.onclose = () => {
-                output.innerText += "❌ WebSocket disconnected\n";
-                triggerBtn.disabled = true;
-                orderBtn.disabled = true;
-            };
-
-            socket.onerror = (err) => {
-                output.innerText += `⚠️ WebSocket error: ${err.message}\n`;
-            };
+        socket.onopen = () => {
+            statusElem.textContent = "✅ Connected";
+            log("Connected to server.");
         };
 
-        triggerBtn.onclick = () => {
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send("autobarista");
-                output.innerText += "📤 Sent: autobarista\n";
+        socket.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "start") {
+                log("type: start");
+                log("🎤 Voice recognition started...");
+            } else if (msg.type === "voiceOrderResult") {
+                log("type: voiceOrderResult");
+                log("✅ Order result received:");
+                log(JSON.stringify(msg.data, null, 2));
+            } else {
+                log("📩 Unknown message received:");
+                log(JSON.stringify(msg, null, 2));
             }
         };
 
-        orderBtn.onclick = async () => {
-            try {
-                const res = await fetch("http://localhost:8000/latest_order");
-                const data = await res.json();
-                output.innerText += `🧾 Latest order: ${JSON.stringify(data)}\n`;
-            } catch (error) {
-                output.innerText += `⚠️ Error fetching latest order: ${error}\n`;
-            }
+        socket.onerror = (error) => {
+            statusElem.textContent = "❌ Error";
+            log("WebSocket error: " + error);
+        };
+
+        socket.onclose = () => {
+            statusElem.textContent = "🔌 Disconnected";
+            log("Connection closed.");
         };
     </script>
 </body>

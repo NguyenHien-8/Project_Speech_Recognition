@@ -2,15 +2,16 @@
 # Developer: Trần Nguyên Hiền
 # Faculty: Electronics and Communication Engineering
 # =====================================================================================================
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import threading
 import uvicorn
+from typing import List
+import asyncio
 
 import sounddevice as sd
 import queue
 import json
-import requests
 import re
 import os
 import tempfile
@@ -30,6 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+connected_clients: List[WebSocket] = []
 is_speaking = False
 latest_order = None
 drink_prices = {}
@@ -206,6 +208,7 @@ def Voice_Ordering_System():
 
                 if listening_for_trigger:
                     if text.startswith("autobarista") or any(kw in text for kw in trigger_keywords):
+                        asyncio.run(await_send_to_clients({"type": "start"}))
                         speak("Yes, I'm here. What would you like to drink?")
                         print("Yes, I'm here. What would you like to drink?")
                         listening_for_trigger = False
@@ -247,6 +250,10 @@ def Voice_Ordering_System():
                                 "drink": selected_drink,
                                 "size": selected_size
                             }
+                            asyncio.run(await_send_to_clients({
+                                "type": "voiceOrderResult", 
+                                "data": latest_order
+                            }))
                             reset_state()
                             listening_for_trigger = True
                             speak("If you want to order again, just say Autobarista.")
@@ -272,6 +279,10 @@ def Voice_Ordering_System():
                                         **component_sizes.copy(),
                                     }
                                 }
+                                asyncio.run(await_send_to_clients({
+                                    "type": "voiceOrderResult", 
+                                    "data": latest_order
+                                }))
                                 reset_state()
                                 listening_for_trigger = True
                                 speak("If you want to order again, just say Autobarista.")
@@ -341,6 +352,30 @@ def Voice_Ordering_System():
                         print("Sorry I did not recognize the size. Please try again.")
 
 # ======================== FastAPI ========================
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    connected_clients.append(websocket)
+    print("WebSocket client connected.")
+    try:
+        while True:
+            await websocket.receive_text()  
+    except WebSocketDisconnect:
+        connected_clients.remove(websocket)
+        print("WebSocket client disconnected.")
+
+async def await_send_to_clients(message: dict):
+    disconnected = []
+    for client in connected_clients:
+        try:
+            await client.send_json(message)
+        except Exception as e:
+            print("WebSocket send error:", e)
+            disconnected.append(client)
+    for client in disconnected:
+        connected_clients.remove(client)
+
+
 @app.on_event("startup")
 def start_background_thread():
     thread = threading.Thread(target=Voice_Ordering_System, daemon=True)
