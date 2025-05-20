@@ -1,16 +1,10 @@
-# ============================================ Nguyen Hien ============================================ 
-# Developer: Trần Nguyên Hiền
-# Faculty: Electronics and Communication Engineering
-# =====================================================================================================
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import threading
 import uvicorn
-
 import sounddevice as sd
 import queue
 import json
-import requests
 import re
 import os
 import tempfile
@@ -31,16 +25,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === Global State ===
+clients = []
 is_speaking = False
-latest_order = None  # <--- Biến lưu đơn hàng mới nhất
+latest_order = None
+drink_prices = {}
 
-# ============ From Supabase Import Drink and Ingredient ============
+# === Supabase Data ===
 def fetch_drinks_from_supabase():
     try:
-        response = supabase.table("drinkdata").select("drink_name").execute()
-        return [item['drink_name'].lower() for item in response.data if 'drink_name' in item]
+        response = supabase.table("drinkdata").select("drink_name,price").execute()
+        return [{"name": item["drink_name"].lower(), "price": item["price"]} for item in response.data]
     except Exception as e:
-        print("Error fetching drinks from Supabase:", str(e))
+        print("Error fetching drinks:", str(e))
         return []
 
 def fetch_components_from_supabase():
@@ -54,16 +51,19 @@ def fetch_components_from_supabase():
                 comp_dict[name] = [i.lower() for i in ing]
         return comp_dict
     except Exception as e:
-        print("Error fetching ingredients from Supabase:", str(e))
+        print("Error fetching components:", str(e))
         return {}
 
-def update_drink_keywords(drink_list):
+def update_drink_keywords(drink_data):
     keywords["Drink"] = {}
-    for drink in drink_list:
-        clean_drink = normalize_text(drink)
-        keywords["Drink"][clean_drink] = [clean_drink]
+    for item in drink_data:
+        name = item["name"]
+        price = item["price"]
+        clean_name = normalize_text(name)
+        keywords["Drink"][clean_name] = [clean_name]
+        drink_prices[clean_name] = price
 
-# ========================== Text-To-Speech ===========================
+# === TTS ===
 def speak(text):
     global is_speaking
     if not text.strip():
@@ -79,7 +79,7 @@ def speak(text):
     time.sleep(0.3)
     is_speaking = False
 
-# ========================= Voice Recognition =========================
+# === Voice Recognition ===
 q = queue.Queue()
 model_en = Model("vosk-model-small-en-us-0.15")
 device_info = sd.query_devices(sd.default.device[0], 'input')
@@ -100,7 +100,7 @@ def normalize_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# ============================= Keywords =============================
+# === Keywords ===
 keywords = {
     "Drink": {},
     "Size": {
@@ -139,6 +139,7 @@ def is_valid_speech(text):
                     return True
     return False
 
+# === State Reset ===
 def reset_state():
     global selected_drink, selected_size, component_sizes
     global customizing, current_component_index
@@ -154,15 +155,12 @@ def reset_state():
     pending_value = None
     pending_category = None
 
-# ============ Initialize Keywords And Data ============
-drink_names = fetch_drinks_from_supabase()
-update_drink_keywords(drink_names)
+# === Init keywords and data ===
+drink_data = fetch_drinks_from_supabase()
+update_drink_keywords(drink_data)
 components = fetch_components_from_supabase()
 
-print("Updated drink keywords:", keywords["Drink"])
-print("Updated components from Supabase:", components)
-
-# ============= MAIN VOICE ORDER FUNCTION ==============
+# === Voice Logic ===
 def Voice_Ordering_System():
     global step, selected_drink, selected_size
     global waiting_confirmation, pending_value, pending_category
@@ -170,7 +168,6 @@ def Voice_Ordering_System():
     global listening_for_trigger, latest_order
 
     trigger_keywords = ["continue", "go on", "carry on", "can you", "ok", "start", "autobarista"]
-    print(f"Listening... (Sample Rate = {samplerate})")
 
     step = 1
     selected_drink = None
@@ -193,17 +190,13 @@ def Voice_Ordering_System():
                 print(f"Detected: {text}")
 
                 if is_speaking or not text or not is_valid_speech(text):
-                    print("Ignored noise or system playback.")
                     continue
 
                 if listening_for_trigger:
                     if text.startswith("autobarista") or any(kw in text for kw in trigger_keywords):
                         speak("Yes, I'm here. What would you like to drink?")
-                        print("Yes, I'm here. What would you like to drink?")
                         listening_for_trigger = False
                         step = 1
-                    else:
-                        print("Waiting for trigger word...")
                     continue
 
                 if waiting_confirmation:
@@ -211,8 +204,7 @@ def Voice_Ordering_System():
                     if answer == "Yes":
                         if pending_category == "Drink":
                             selected_drink = pending_value
-                            speak(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
-                            print(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
+                            speak(f"You chose drink: {selected_drink}. Would you like to customize ingredients?")
                             pending_category = "Customize"
                             waiting_confirmation = True
                         elif pending_category == "Customize":
@@ -222,27 +214,25 @@ def Voice_Ordering_System():
                                 component_sizes.clear()
                                 comp = components[selected_drink][current_component_index]
                                 speak(f"What size for {comp}?")
-                                print(f"What size for {comp}?")
                                 step = 3
                             else:
                                 speak("This drink cannot be customized. Please choose size.")
-                                print("This drink cannot be customized. Please choose size.")
                                 step = 2
                             waiting_confirmation = False
                         elif pending_category == "Size":
                             selected_size = pending_value
-                            speak(f"You chose size: {selected_size}. Order successful!")
+                            price = drink_prices.get(selected_drink, "unknown")
+                            speak(f"You chose size: {selected_size}. The price is {price} vnd. Order successful!")
                             speak(f"Confirm: {selected_drink} - size {selected_size}")
-                            # Lưu order
                             latest_order = {
+                                "price": price,
                                 "drink": selected_drink,
-                                "size": selected_size,
-                                "components": None
+                                "size": selected_size
                             }
+                            notify_clients(latest_order)
                             reset_state()
                             listening_for_trigger = True
                             speak("If you want to order again, just say Autobarista.")
-                            print("If you want to order again, just say Autobarista.")
                         elif pending_category == "ComponentSize":
                             comp = components[selected_drink][current_component_index]
                             component_sizes[comp] = pending_value
@@ -250,104 +240,90 @@ def Voice_Ordering_System():
                             if current_component_index < len(components[selected_drink]):
                                 next_comp = components[selected_drink][current_component_index]
                                 speak(f"What size for {next_comp}?")
-                                print(f"What size for {next_comp}?")
                             else:
+                                price = drink_prices.get(selected_drink, "unknown")
                                 final_text = f"Confirm: {selected_drink} with " + \
                                              ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
                                 speak(final_text)
-                                speak("Order successful!")
-                                # Lưu order có tùy chỉnh
+                                speak(f"The price is {price} vnd. Order successful!")
                                 latest_order = {
                                     "drink": selected_drink,
-                                    "size": None,
-                                    "components": component_sizes.copy()
+                                    "details": {
+                                        "price": price,
+                                        **component_sizes.copy(),
+                                    }
                                 }
+                                notify_clients(latest_order)
                                 reset_state()
                                 listening_for_trigger = True
                                 speak("If you want to order again, just say Autobarista.")
-                                print("If you want to order again, just say Autobarista.")
                             waiting_confirmation = False
                     elif answer == "No":
-                        if pending_category == "Drink":
-                            speak("Please say again. What would you like to drink?")
-                            print("Please say again. What would you like to drink?")
-                            step = 1
-                        elif pending_category == "Customize":
-                            customizing = False
-                            speak("What size do you want?")
-                            print("What size do you want?")
-                            step = 2
-                            waiting_confirmation = False
-                        elif pending_category == "Size":
-                            speak("Please say size again.")
-                            print("Please say size again.")
-                            step = 2
-                            waiting_confirmation = False
-                        elif pending_category == "ComponentSize":
-                            comp = components[selected_drink][current_component_index]
-                            speak(f"Please say size again for {comp}.")
-                            print(f"Please say size again for {comp}.")
-                            waiting_confirmation = False
+                        speak("Please say again.")
+                        step = 1 if pending_category == "Drink" else 2
+                        waiting_confirmation = False
                     else:
                         speak("Please say yes or no.")
-                        print("Please say yes or no.")
                     continue
 
                 if step == 1:
                     drink = detect_best_match(text, "Drink")
                     if drink:
                         speak(f"Did you mean drink {drink}? Please say yes or no.")
-                        print(f"Did you mean drink {drink}? Please say yes or no.")
                         pending_value = drink
                         pending_category = "Drink"
                         waiting_confirmation = True
                     else:
-                        speak("Sorry I did not recognize the drink. Please try again.")
-                        print("Sorry I did not recognize the drink. Please try again.")
-
+                        speak("Sorry, I did not recognize the drink.")
                 elif step == 2:
                     size = detect_best_match(text, "Size")
                     if size:
                         speak(f"Did you mean size {size}? Please say yes or no.")
-                        print(f"Did you mean size {size}? Please say yes or no.")
                         pending_value = size
                         pending_category = "Size"
                         waiting_confirmation = True
                     else:
-                        speak("Sorry I did not recognize the size. Please try again.")
-                        print("Sorry I did not recognize the size. Please try again.")
-
+                        speak("Sorry, I did not recognize the size.")
                 elif step == 3:
                     size = detect_best_match(text, "Size")
                     if size:
                         comp = components[selected_drink][current_component_index]
                         speak(f"Did you mean size {size} for {comp}? Please say yes or no.")
-                        print(f"Did you mean size {size} for {comp}? Please say yes or no.")
                         pending_value = size
                         pending_category = "ComponentSize"
                         waiting_confirmation = True
                     else:
-                        speak("Sorry I did not recognize the size. Please try again.")
-                        print("Sorry I did not recognize the size. Please try again.")
+                        speak("Sorry, I did not recognize the size.")
 
-# ======================== FastAPI ========================
+# === Notify Clients via WebSocket ===
+def notify_clients(order):
+    for client in clients:
+        try:
+            import asyncio
+            asyncio.create_task(client.send_json(order))
+        except Exception as e:
+            print("WebSocket client error:", e)
+
+# === WebSocket Route ===
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    clients.append(websocket)
+    print("New WebSocket client connected.")
+    try:
+        while True:
+            await websocket.receive_text()  # We don’t care about incoming messages here
+    except:
+        clients.remove(websocket)
+        print("WebSocket client disconnected.")
+
+# === Startup Thread ===
 @app.on_event("startup")
-def start_background_thread():
+def start_voice_thread():
     thread = threading.Thread(target=Voice_Ordering_System, daemon=True)
     thread.start()
     print("Voice system started in background.")
 
-@app.get("/")
-def root():
-    return {"message": "Voice ordering system is running."}
-
-@app.get("/latest_order")
-def get_latest_order():
-    if latest_order:
-        return {"status": "success", "order": latest_order}
-    else:
-        return {"status": "no_order", "message": "No order has been placed yet."}
-
-# ====================== Entry Point ======================
+# === Run Server ===
 if __name__ == "__main__":
-    uvicorn.run("DemoCode3:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("DemoCode2:app", host="0.0.0.0", port=8000, reload=False)

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import threading
 import uvicorn
-from Speech_VoskAPI import run_voice_order_system 
+from Http_Speech_VoskAPI import run_voice_order_system 
 
 app = FastAPI(title="Voice Ordering System")
 

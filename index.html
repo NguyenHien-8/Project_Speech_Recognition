@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Drink Order Client</title>
+</head>
+
+<body>
+    <h1>WebSocket Voice Ordering System</h1>
+
+    <button id="connectBtn">Connect WebSocket</button>
+    <button id="triggerBtn" disabled>Trigger Voice (Autobarista)</button>
+    <button id="orderBtn" disabled>Get Latest Order</button>
+
+    <pre id="output"></pre>
+
+    <script>
+        let socket;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const triggerBtn = document.getElementById('triggerBtn');
+        const orderBtn = document.getElementById('orderBtn');
+        const output = document.getElementById('output');
+
+        connectBtn.onclick = () => {
+            socket = new WebSocket("ws://localhost:8000/ws");
+
+            socket.onopen = () => {
+                output.innerText += "✅ WebSocket connected\n";
+                triggerBtn.disabled = false;
+                orderBtn.disabled = false;
+            };
+
+            socket.onmessage = (event) => {
+                output.innerText += `📨 Server: ${event.data}\n`;
+            };
+
+            socket.onclose = () => {
+                output.innerText += "❌ WebSocket disconnected\n";
+                triggerBtn.disabled = true;
+                orderBtn.disabled = true;
+            };
+
+            socket.onerror = (err) => {
+                output.innerText += `⚠️ WebSocket error: ${err.message}\n`;
+            };
+        };
+
+        triggerBtn.onclick = () => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send("autobarista");
+                output.innerText += "📤 Sent: autobarista\n";
+            }
+        };
+
+        orderBtn.onclick = async () => {
+            try {
+                const res = await fetch("http://localhost:8000/latest_order");
+                const data = await res.json();
+                output.innerText += `🧾 Latest order: ${JSON.stringify(data)}\n`;
+            } catch (error) {
+                output.innerText += `⚠️ Error fetching latest order: ${error}\n`;
+            }
+        };
+    </script>
+</body>
+
+</html>
