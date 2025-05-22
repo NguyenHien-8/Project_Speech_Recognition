@@ -377,5 +377,5 @@ def start_background_thread():
     print("Voice System Started In Background.")
 
 if __name__ == "__main__":
-    uvicorn.run("WebSocket_Speech_VoskAPI:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("WebSocket_Speech_VoskAPI:app", host="0.0.0.0", port=8086, reload=False)
 
