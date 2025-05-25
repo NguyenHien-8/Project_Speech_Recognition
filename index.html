@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Voice Order Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 2rem;
+            background-color: #f0f0f0;
+        }
+
+        #log {
+            margin-top: 1rem;
+            background: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Voice Order WebSocket Client</h1>
+    <p>Status: <span id="status">🔌 Connecting...</span></p>
+
+    <div id="log"></div>
+
+    <script>
+        const statusElem = document.getElementById("status");
+        const logElem = document.getElementById("log");
+
+        function log(message) {
+            const div = document.createElement("div");
+            div.className = "log-entry";
+            div.textContent = message;
+            logElem.appendChild(div);
+        }
+
+        const socket = new WebSocket("ws://localhost:8000/ws");
+
+        socket.onopen = () => {
+            statusElem.textContent = "✅ Connected";
+            log("Connected to server.");
+        };
+
+        socket.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "start") {
+                log("type: start");
+                log("🎤 Voice recognition started...");
+            } else if (msg.type === "voiceOrderResult") {
+                log("type: voiceOrderResult");
+                log("✅ Order result received:");
+                log(JSON.stringify(msg.data, null, 2));
+            } else {
+                log("📩 Unknown message received:");
+                log(JSON.stringify(msg, null, 2));
+            }
+        };
+
+        socket.onerror = (error) => {
+            statusElem.textContent = "❌ Error";
+            log("WebSocket error: " + error);
+        };
+
+        socket.onclose = () => {
+            statusElem.textContent = "🔌 Disconnected";
+            log("Connection closed.");
+        };
+    </script>
+</body>
+
+</html>
