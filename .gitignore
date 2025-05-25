@@ -3,9 +3,3 @@ __pycache__/
 
 # Delete venv
 .venv/
-
-# Delete Fetchdata.py
-Fetchdata.py
-
-# Delete MainFastAPI.py
-MainFastAPI.py
