@@ -52,13 +52,15 @@ def fetch_drinks_from_supabase():
 
 def fetch_components_from_supabase():
     try:
-        response = supabase.table("drinkdata").select("drink_name,ingredients").execute()
+        response = supabase.table("drinkdata").select("drink_name_en,ingredients_en").execute()
         comp_dict = {}
         for item in response.data:
-            name = item.get("drink_name", "").lower()
-            ing = item.get("ingredients", [])
-            if name and isinstance(ing, list):
-                comp_dict[name] = [i.lower() for i in ing]
+            name = item.get("drink_name_en", "").lower()
+            ing = item.get("ingredients_en", "")
+            if name and isinstance(ing, str):
+                # Loại bỏ dấu ngoặc nhọn và tách các thành phần
+                ing = ing.strip("{}")  # Loại bỏ dấu ngoặc nhọn
+                comp_dict[name] = [i.strip().lower() for i in ing.split(",") if i.strip()]
         return comp_dict
     except Exception as e:
         print("Error fetching ingredients from Supabase:", str(e))
