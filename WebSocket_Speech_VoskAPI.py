@@ -52,14 +52,13 @@ def fetch_drinks_from_supabase():
 
 def fetch_components_from_supabase():
     try:
-        response = supabase.table("drinkdata").select("drink_name_en,ingredients_en").execute()
+        response = supabase.table("drinkdata").select("drink_name,ingredients").execute()
         comp_dict = {}
         for item in response.data:
-            name = item.get("drink_name_en", "").lower()
-            ing = item.get("ingredients_en", "")
+            name = item.get("drink_name", "").lower()
+            ing = item.get("ingredients", "")
             if name and isinstance(ing, str):
-                # Loại bỏ dấu ngoặc nhọn và tách các thành phần
-                ing = ing.strip("{}")  # Loại bỏ dấu ngoặc nhọn
+                ing = ing.strip("{}") 
                 comp_dict[name] = [i.strip().lower() for i in ing.split(",") if i.strip()]
         return comp_dict
     except Exception as e:
@@ -116,9 +115,9 @@ def normalize_text(text):
 keywords = {
     "Drink": {},
     "Size": {
-        "S": ["size s", "s"],
-        "M": ["size m", "m"],
-        "L": ["size l", "l"]
+        "S": ["size s", "size small", "small"],
+        "M": ["size m", "size medium", "medium"],
+        "L": ["size l", "size large", "large"]
     },
     "YesNo": {
         "Yes": ["yes", "yeah", "correct", "sure", "right"],
