@@ -124,6 +124,7 @@ keywords = {
         "No": ["no", "nope", "not", "incorrect", "wrong"]
     }
 }
+TRIGGER_KEYWORDS = ["hey dispenser", "dispenser", "hey you", "hey you"]
 
 def detect_best_match(text, category, threshold=80):
     best_match = {"score": 0, "label": None, "length": 0}
@@ -141,7 +142,7 @@ def detect_best_match(text, category, threshold=80):
 def is_valid_speech(text):
     if not text:
         return False
-    if "continue" in text:
+    if any(kw in text for kw in TRIGGER_KEYWORDS):
         return True
     for category in keywords.values():
         for kw_list in category.values():
@@ -180,7 +181,7 @@ def Voice_Ordering_System():
     global customizing, current_component_index, component_sizes
     global listening_for_trigger, latest_order
 
-    trigger_keywords = ["continue", "go on", "carry on", "can you", "ok", "start", "autobarista"]
+    trigger_keywords = TRIGGER_KEYWORDS
     print(f"Listening... (Sample Rate = {samplerate})")
 
     step = 1
@@ -210,8 +211,8 @@ def Voice_Ordering_System():
                 if listening_for_trigger:
                     if text.startswith("autobarista") or any(kw in text for kw in trigger_keywords):
                         asyncio.run(broadcast_to_clients({"type": "start"}))
-                        speak("Yes, I'm here. What would you like to drink?")
-                        print("Yes, I'm here. What would you like to drink?")
+                        speak("Yes,I'm here. What would you like to drink?")
+                        print("Yes, 'm here. What would you like to drink?")
                         listening_for_trigger = False
                         step = 1
                     else:
@@ -223,134 +224,118 @@ def Voice_Ordering_System():
                     if answer == "Yes":
                         if pending_category == "Drink":
                             selected_drink = pending_value
-                            speak(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
-                            print(f"You chose drink: {selected_drink}. Would you like to customize your drink ingredients?")
-                            pending_category = "Customize"
-                            waiting_confirmation = True
-                        elif pending_category == "Customize":
                             if selected_drink in components:
-                                customizing = True
-                                current_component_index = 0
-                                component_sizes.clear()
-                                comp = components[selected_drink][current_component_index]
-                                speak(f"What size for {comp}?")
-                                print(f"What size for {comp}?")
-                                step = 3
+                                speak(f"You chose {selected_drink}. Would you like to customize the ingredients?")
+                                pending_category = "CustomizeChoice"
+                                waiting_confirmation = True
                             else:
-                                speak("This drink cannot be customized. Please choose size.")
-                                print("This drink cannot be customized. Please choose size.")
+                                speak(f"You chose {selected_drink}. What size would you like?")
                                 step = 2
+                                waiting_confirmation = False
+                        elif pending_category == "CustomizeChoice":
+                            customizing = True
+                            current_component_index = 0
+                            component_sizes.clear()
+                            comp = components[selected_drink][current_component_index]
+                            speak(f"What size for {comp}?")
+                            step = 3
                             waiting_confirmation = False
                         elif pending_category == "Size":
                             selected_size = pending_value
                             price = drink_prices.get(selected_drink, "unknown")
-                            speak(f"You chose size: {selected_size}. The price is {price} vnd. Order successful!")
-                            speak(f"Confirm: {selected_drink} - size {selected_size}")
+                            speak(f"Confirm: {selected_drink} - size {selected_size}. The price is {price} vnd. Does this seem right to you?")
                             latest_order = {
                                 "price": price,
                                 "drink": selected_drink,
                                 "size": selected_size
                             }
+                            pending_category = "FinalConfirmation"
+                        elif pending_category == "FinalConfirmation":
+                            price = drink_prices.get(selected_drink, "unknown")
+                            speak(f"Order successful! Enjoy your {selected_drink}.")
                             asyncio.run(broadcast_to_clients({
-                               "type": "voiceOrderResult",
-                               "data": latest_order
+                                "type": "voiceOrderResult",
+                                "data": latest_order
                             }))
                             reset_state()
                             listening_for_trigger = True
                             speak("If you want to order again, just say Autobarista.")
-                            print("If you want to order again, just say Autobarista.")
-                        elif pending_category == "ComponentSize":
-                            comp = components[selected_drink][current_component_index]
-                            component_sizes[comp] = pending_value
-                            current_component_index += 1
-                            if current_component_index < len(components[selected_drink]):
-                                next_comp = components[selected_drink][current_component_index]
-                                speak(f"What size for {next_comp}?")
-                                print(f"What size for {next_comp}?")
-                            else:
-                                price = drink_prices.get(selected_drink, "unknown")
-                                final_text = f"Confirm: {selected_drink} with " + \
-                                             ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
-                                speak(final_text)
-                                speak(f"The price is {price} vnd. Order successful!")
-                                latest_order = {
-                                    "drink": selected_drink,
-                                    "details": {
-                                        "price": price,
-                                        **component_sizes.copy(),
-                                    }
-                                }
-                                asyncio.run(broadcast_to_clients({
-                                    "type": "voiceOrderResult",
-                                    "data": latest_order
-                                }))
-                                reset_state()
-                                listening_for_trigger = True
-                                speak("If you want to order again, just say Autobarista.")
-                                print("If you want to order again, just say Autobarista.")
-                            waiting_confirmation = False
                     elif answer == "No":
                         if pending_category == "Drink":
-                            speak("Please say again. What would you like to drink?")
-                            print("Please say again. What would you like to drink?")
+                            speak("Sorry, I did not catch that. What would you like to drink?")
                             step = 1
-                        elif pending_category == "Customize":
-                            customizing = False
-                            speak("What size do you want?")
-                            print("What size do you want?")
+                            waiting_confirmation = False
+                        elif pending_category == "CustomizeChoice":
+                            speak(f"Please say again, what size for your {selected_drink}?")
                             step = 2
                             waiting_confirmation = False
-                        elif pending_category == "Size":
-                            speak("Please say size again.")
-                            print("Please say size again.")
-                            step = 2
-                            waiting_confirmation = False
-                        elif pending_category == "ComponentSize":
-                            comp = components[selected_drink][current_component_index]
-                            speak(f"Please say size again for {comp}.")
-                            print(f"Please say size again for {comp}.")
+                        elif pending_category == "FinalConfirmation":
+                            if customizing:
+                                current_component_index = 0
+                                component_sizes.clear()
+                                comp = components[selected_drink][current_component_index]
+                                speak(f"No worries — let try again. What size {comp} would you like?")
+                                step = 3
+                            else:
+                                speak("Sorry, could you say the size again?")
+                                step = 2
                             waiting_confirmation = False
                     else:
-                        speak("Please say yes or no.")
-                        print("Please say yes or no.")
+                        speak("You can answer yes or no.")
                     continue
 
                 if step == 1:
                     drink = detect_best_match(text, "Drink")
                     if drink:
-                        speak(f"Did you mean drink {drink}? Please say yes or no.")
-                        print(f"Did you mean drink {drink}? Please say yes or no.")
+                        speak(f"You said {drink}, did you mean a drink {drink}?")
                         pending_value = drink
                         pending_category = "Drink"
                         waiting_confirmation = True
                     else:
-                        speak("Sorry I did not recognize the drink. Please try again.")
-                        print("Sorry I did not recognize the drink. Please try again.")
+                        speak("Sorry, I did not quite get the drink. Mind saying it one more time?")
 
                 elif step == 2:
                     size = detect_best_match(text, "Size")
                     if size:
-                        speak(f"Did you mean size {size}? Please say yes or no.")
-                        print(f"Did you mean size {size}? Please say yes or no.")
-                        pending_value = size
-                        pending_category = "Size"
+                        selected_size = size
+                        price = drink_prices.get(selected_drink, "unknown")
+                        speak(f"Confirm: {selected_drink} - size {selected_size}. The price is {price} vnd. Does this seem right to you?")
+                        latest_order = {
+                            "price": price,
+                            "drink": selected_drink,
+                            "size": selected_size
+                        }
+                        pending_category = "FinalConfirmation"
                         waiting_confirmation = True
                     else:
-                        speak("Sorry I did not recognize the size. Please try again.")
-                        print("Sorry I did not recognize the size. Please try again.")
+                        speak("Sorry, I did not quite get the size. Mind saying it one more time?")
 
                 elif step == 3:
                     size = detect_best_match(text, "Size")
                     if size:
                         comp = components[selected_drink][current_component_index]
-                        speak(f"Did you mean size {size} for {comp}? Please say yes or no.")
-                        print(f"Did you mean size {size} for {comp}? Please say yes or no.")
-                        pending_value = size
-                        pending_category = "ComponentSize"
-                        waiting_confirmation = True
+                        component_sizes[comp] = size
+                        current_component_index += 1
+                        
+                        if current_component_index < len(components[selected_drink]):
+                            next_comp = components[selected_drink][current_component_index]
+                            speak(f"What size for {next_comp}?")
+                        else:
+                            price = drink_prices.get(selected_drink, "unknown")
+                            final_text = f"Confirm: {selected_drink} with " + \
+                                         ", ".join([f"{k} size {v}" for k, v in component_sizes.items()])
+                            speak(f"{final_text}. The price is {price} vnd. Is this correct?")
+                            latest_order = {
+                                "drink": selected_drink,
+                                "details": {
+                                    "price": price,
+                                    **component_sizes.copy(),
+                                }
+                            }
+                            pending_category = "FinalConfirmation"
+                            waiting_confirmation = True
                     else:
-                        speak("Sorry I did not recognize the size. Please try again.")
-                        print("Sorry I did not recognize the size. Please try again.")
+                        speak("Sorry, I did not quite get the size. Mind saying it one more time?")
 
 # ======================== WEBSOCKET ========================
 @app.websocket("/ws")
@@ -379,4 +364,4 @@ def start_background_thread():
 
 if __name__ == "__main__":
     uvicorn.run("WebSocket_Speech_VoskAPI:app", host="0.0.0.0", port=8086, reload=False)
-
+    
